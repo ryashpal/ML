@@ -110,3 +110,5 @@ makejob
 # tags
 tags
 
+# data files
+*/data/*
