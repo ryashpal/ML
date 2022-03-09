@@ -1,0 +1,128 @@
+-- This query pivots the vital signs for the first 24 hours of a patient's stay
+-- Vital signs include heart rate, blood pressure, respiration rate, and temperature
+
+DROP MATERIALIZED VIEW IF EXISTS saps_ii.vitalsfirstday CASCADE;
+create materialized view saps_ii.vitalsfirstday as
+SELECT micro_specimen_id, person_id
+
+-- Easier names
+, min(case when VitalID = 1 then valuenum else null end) as HeartRate_Min
+, max(case when VitalID = 1 then valuenum else null end) as HeartRate_Max
+, avg(case when VitalID = 1 then valuenum else null end) as HeartRate_Mean
+, min(case when VitalID = 2 then valuenum else null end) as SysBP_Min
+, max(case when VitalID = 2 then valuenum else null end) as SysBP_Max
+, avg(case when VitalID = 2 then valuenum else null end) as SysBP_Mean
+, min(case when VitalID = 3 then valuenum else null end) as DiasBP_Min
+, max(case when VitalID = 3 then valuenum else null end) as DiasBP_Max
+, avg(case when VitalID = 3 then valuenum else null end) as DiasBP_Mean
+, min(case when VitalID = 4 then valuenum else null end) as MeanBP_Min
+, max(case when VitalID = 4 then valuenum else null end) as MeanBP_Max
+, avg(case when VitalID = 4 then valuenum else null end) as MeanBP_Mean
+, min(case when VitalID = 5 then valuenum else null end) as RespRate_Min
+, max(case when VitalID = 5 then valuenum else null end) as RespRate_Max
+, avg(case when VitalID = 5 then valuenum else null end) as RespRate_Mean
+, min(case when VitalID = 6 then valuenum else null end) as TempC_Min
+, max(case when VitalID = 6 then valuenum else null end) as TempC_Max
+, avg(case when VitalID = 6 then valuenum else null end) as TempC_Mean
+, min(case when VitalID = 7 then valuenum else null end) as SpO2_Min
+, max(case when VitalID = 7 then valuenum else null end) as SpO2_Max
+, avg(case when VitalID = 7 then valuenum else null end) as SpO2_Mean
+, min(case when VitalID = 8 then valuenum else null end) as Glucose_Min
+, max(case when VitalID = 8 then valuenum else null end) as Glucose_Max
+, avg(case when VitalID = 8 then valuenum else null end) as Glucose_Mean
+
+FROM  (
+  select coh.micro_specimen_id, per.person_id
+  , case
+    when itemid in (211,220045) and valuenum > 0 and valuenum < 300 then 1 -- HeartRate
+    when itemid in (51,442,455,6701,220179,220050) and valuenum > 0 and valuenum < 400 then 2 -- SysBP
+    when itemid in (8368,8440,8441,8555,220180,220051) and valuenum > 0 and valuenum < 300 then 3 -- DiasBP
+    when itemid in (456,52,6702,443,220052,220181,225312) and valuenum > 0 and valuenum < 300 then 4 -- MeanBP
+    when itemid in (615,618,220210,224690) and valuenum > 0 and valuenum < 70 then 5 -- RespRate
+    when itemid in (223761,678) and valuenum > 70 and valuenum < 120  then 6 -- TempF, converted to degC in valuenum call
+    when itemid in (223762,676) and valuenum > 10 and valuenum < 50  then 6 -- TempC
+    when itemid in (646,220277) and valuenum > 0 and valuenum <= 100 then 7 -- SpO2
+    when itemid in (807,811,1529,3745,3744,225664,220621,226537) and valuenum > 0 then 8 -- Glucose
+
+    else null end as VitalID
+      -- convert F to C
+  , case when itemid in (223761,678) then (valuenum-32)/1.8 else valuenum end as valuenum
+
+	from
+	sepsis_micro.cohort coh
+	inner join omop_cdm.person per
+	on per.person_id = coh.person_id
+	inner join mimiciv.patients pat
+	on pat.subject_id = per.person_source_value::int
+	-- inner join mimiciv.admissions adm
+	-- on adm.subject_id = pat.subject_id and (coh.chart_time > (adm.admittime - interval '2' day)) and (coh.chart_time < (adm.dischtime + interval '2' day))
+	inner join mimiciv.icustays icu
+	on icu.subject_id = pat.subject_id and (coh.chart_time > (icu.intime - interval '2' day)) and (coh.chart_time < (icu.outtime + interval '2' day))
+  left join mimiciv.chartevents ce
+  on icu.subject_id = ce.subject_id and icu.hadm_id = ce.hadm_id and icu.stay_id = ce.stay_id
+  and ce.charttime between icu.intime and icu.intime + interval '1' day
+  -- exclude rows marked as error
+--   and ce.error IS DISTINCT FROM 1
+  where ce.itemid in
+  (
+  -- HEART RATE
+  211, --"Heart Rate"
+  220045, --"Heart Rate"
+
+  -- Systolic/diastolic
+
+  51, --	Arterial BP [Systolic]
+  442, --	Manual BP [Systolic]
+  455, --	NBP [Systolic]
+  6701, --	Arterial BP #2 [Systolic]
+  220179, --	Non Invasive Blood Pressure systolic
+  220050, --	Arterial Blood Pressure systolic
+
+  8368, --	Arterial BP [Diastolic]
+  8440, --	Manual BP [Diastolic]
+  8441, --	NBP [Diastolic]
+  8555, --	Arterial BP #2 [Diastolic]
+  220180, --	Non Invasive Blood Pressure diastolic
+  220051, --	Arterial Blood Pressure diastolic
+
+
+  -- MEAN ARTERIAL PRESSURE
+  456, --"NBP Mean"
+  52, --"Arterial BP Mean"
+  6702, --	Arterial BP Mean #2
+  443, --	Manual BP Mean(calc)
+  220052, --"Arterial Blood Pressure mean"
+  220181, --"Non Invasive Blood Pressure mean"
+  225312, --"ART BP mean"
+
+  -- RESPIRATORY RATE
+  618,--	Respiratory Rate
+  615,--	Resp Rate (Total)
+  220210,--	Respiratory Rate
+  224690, --	Respiratory Rate (Total)
+
+
+  -- SPO2, peripheral
+  646, 220277,
+
+  -- GLUCOSE, both lab and fingerstick
+  807,--	Fingerstick Glucose
+  811,--	Glucose (70-105)
+  1529,--	Glucose
+  3745,--	BloodGlucose
+  3744,--	Blood Glucose
+  225664,--	Glucose finger stick
+  220621,--	Glucose (serum)
+  226537,--	Glucose (whole blood)
+
+  -- TEMPERATURE
+  223762, -- "Temperature Celsius"
+  676,	-- "Temperature C"
+  223761, -- "Temperature Fahrenheit"
+  678 --	"Temperature F"
+
+  )
+) pvt
+group by micro_specimen_id, person_id
+order by micro_specimen_id, person_id
+;
