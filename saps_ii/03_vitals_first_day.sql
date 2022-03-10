@@ -3,7 +3,7 @@
 
 DROP MATERIALIZED VIEW IF EXISTS saps_ii.vitalsfirstday CASCADE;
 create materialized view saps_ii.vitalsfirstday as
-SELECT micro_specimen_id, person_id
+SELECT pvt.subject_id, pvt.hadm_id, pvt.stay_id
 
 -- Easier names
 , min(case when VitalID = 1 then valuenum else null end) as HeartRate_Min
@@ -32,7 +32,7 @@ SELECT micro_specimen_id, person_id
 , avg(case when VitalID = 8 then valuenum else null end) as Glucose_Mean
 
 FROM  (
-  select coh.micro_specimen_id, per.person_id
+  select ie.subject_id, ie.hadm_id, ie.stay_id
   , case
     when itemid in (211,220045) and valuenum > 0 and valuenum < 300 then 1 -- HeartRate
     when itemid in (51,442,455,6701,220179,220050) and valuenum > 0 and valuenum < 400 then 2 -- SysBP
@@ -48,19 +48,10 @@ FROM  (
       -- convert F to C
   , case when itemid in (223761,678) then (valuenum-32)/1.8 else valuenum end as valuenum
 
-	from
-	sepsis_micro.cohort coh
-	inner join omop_cdm.person per
-	on per.person_id = coh.person_id
-	inner join mimiciv.patients pat
-	on pat.subject_id = per.person_source_value::int
-	-- inner join mimiciv.admissions adm
-	-- on adm.subject_id = pat.subject_id and (coh.chart_time > (adm.admittime - interval '2' day)) and (coh.chart_time < (adm.dischtime + interval '2' day))
-	inner join mimiciv.icustays icu
-	on icu.subject_id = pat.subject_id and (coh.chart_time > (icu.intime - interval '2' day)) and (coh.chart_time < (icu.outtime + interval '2' day))
+  from mimiciv.icustays ie
   left join mimiciv.chartevents ce
-  on icu.subject_id = ce.subject_id and icu.hadm_id = ce.hadm_id and icu.stay_id = ce.stay_id
-  and ce.charttime between icu.intime and icu.intime + interval '1' day
+  on ie.subject_id = ce.subject_id and ie.hadm_id = ce.hadm_id and ie.stay_id = ce.stay_id
+  and ce.charttime between ie.intime and ie.intime + interval '1' day
   -- exclude rows marked as error
 --   and ce.error IS DISTINCT FROM 1
   where ce.itemid in
@@ -123,6 +114,6 @@ FROM  (
 
   )
 ) pvt
-group by micro_specimen_id, person_id
-order by micro_specimen_id, person_id
+group by pvt.subject_id, pvt.hadm_id, pvt.stay_id
+order by pvt.subject_id, pvt.hadm_id, pvt.stay_id
 ;
