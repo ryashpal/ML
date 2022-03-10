@@ -5,7 +5,7 @@
 DROP MATERIALIZED VIEW IF EXISTS saps_ii.labsfirstday CASCADE;
 CREATE materialized VIEW saps_ii.labsfirstday AS
 SELECT
-  pvt.micro_specimen_id, pvt.person_id
+  pvt.subject_id, pvt.hadm_id, pvt.stay_id
 
   , min(CASE WHEN label = 'ANION GAP' THEN valuenum ELSE null END) as ANIONGAP_min
   , max(CASE WHEN label = 'ANION GAP' THEN valuenum ELSE null END) as ANIONGAP_max
@@ -49,7 +49,7 @@ SELECT
 
 FROM
 ( -- begin query that extracts the data
-  SELECT coh.micro_specimen_id, per.person_id
+  SELECT ie.subject_id, ie.hadm_id, ie.stay_id
   -- here we assign labels to ITEMIDs
   -- this also fuses together multiple ITEMIDs containing the same data
   , CASE
@@ -114,18 +114,11 @@ FROM
     ELSE le.valuenum
     END AS valuenum
 
-	from
-	sepsis_micro.cohort coh
-	inner join omop_cdm.person per
-	on per.person_id = coh.person_id
-	inner join mimiciv.patients pat
-	on pat.subject_id = per.person_source_value::int
-	inner join mimiciv.icustays icu
-	on icu.subject_id = pat.subject_id and (coh.chart_time > (icu.intime - interval '2' day)) and (coh.chart_time < (icu.outtime + interval '2' day))
+  FROM mimiciv.icustays ie
 
   LEFT JOIN mimiciv.labevents le
-    ON le.subject_id = icu.subject_id AND le.hadm_id = icu.hadm_id
-    AND le.charttime BETWEEN (icu.intime - interval '6' hour) AND (icu.intime + interval '1' day)
+    ON le.subject_id = ie.subject_id AND le.hadm_id = ie.hadm_id
+    AND le.charttime BETWEEN (ie.intime - interval '6' hour) AND (ie.intime + interval '1' day)
     AND le.ITEMID in
     (
       -- comment is: LABEL | CATEGORY | FLUID | NUMBER OF ROWS IN LABEVENTS
@@ -158,6 +151,6 @@ FROM
     )
     AND valuenum IS NOT null AND valuenum > 0 -- lab values cannot be 0 and cannot be negative
 ) pvt
-GROUP BY pvt.micro_specimen_id, pvt.person_id
-ORDER BY pvt.micro_specimen_id, pvt.person_id
+GROUP BY pvt.subject_id, pvt.hadm_id, pvt.stay_id
+ORDER BY pvt.subject_id, pvt.hadm_id, pvt.stay_id
 ;
