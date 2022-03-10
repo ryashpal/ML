@@ -5,30 +5,22 @@
 DROP MATERIALIZED VIEW IF EXISTS saps_ii.ventfirstday CASCADE;
 CREATE MATERIALIZED VIEW saps_ii.ventfirstday AS
 select
-  coh.micro_specimen_id, per.person_id
+  ie.subject_id, ie.hadm_id, ie.stay_id
   -- if vd.stay_id is not null, then they have a valid ventilation event
   -- in this case, we say they are ventilated
   -- otherwise, they are not
   , max(case
       when vd.stay_id is not null then 1
     else 0 end) as vent
-from
-sepsis_micro.cohort coh
-inner join omop_cdm.person per
-on per.person_id = coh.person_id
-inner join mimiciv.patients pat
-on pat.subject_id = per.person_source_value::int
-inner join mimiciv.icustays icu
-on icu.subject_id = pat.subject_id and (coh.chart_time > (icu.intime - interval '2' day)) and (coh.chart_time < (icu.outtime + interval '2' day))
+from mimiciv.icustays ie
 left join saps_ii.ventdurations vd
-  on icu.stay_id = vd.stay_id
+  on ie.stay_id = vd.stay_id
   and
   (
     -- ventilation duration overlaps with ICU admission -> vented on admission
-    (vd.starttime <= icu.intime and vd.endtime >= icu.intime)
+    (vd.starttime <= ie.intime and vd.endtime >= ie.intime)
     -- ventilation started during the first day
-    OR (vd.starttime >= icu.intime and vd.starttime <= icu.intime + interval '1' day)
+    OR (vd.starttime >= ie.intime and vd.starttime <= ie.intime + interval '1' day)
   )
-group by coh.micro_specimen_id, per.person_id
-order by coh.micro_specimen_id, per.person_id
-;
+group by ie.subject_id, ie.hadm_id, ie.stay_id
+order by ie.subject_id, ie.hadm_id, ie.stay_id;
