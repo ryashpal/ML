@@ -1,8 +1,12 @@
+-- ------------------------------------------------------------------
+-- Purpose: Create a view of the urine output for each stay_id over the first 24 hours.
+-- ------------------------------------------------------------------
+
 DROP MATERIALIZED VIEW IF EXISTS saps_ii.uofirstday CASCADE;
 create materialized view saps_ii.uofirstday as
 select
   -- patient identifiers
-  coh.micro_specimen_id, per.person_id
+  ie.subject_id, ie.hadm_id, ie.stay_id
 
   -- volumes associated with urine output ITEMIDs
   , sum(
@@ -10,21 +14,13 @@ select
       case when oe.itemid = 227488 then -1*VALUE
       else VALUE end
   ) as UrineOutput
-from
-sepsis_micro.cohort coh
-inner join omop_cdm.person per
-on per.person_id = coh.person_id
-inner join mimiciv.patients pat
-on pat.subject_id = per.person_source_value::int
--- inner join mimiciv.admissions adm
--- on adm.subject_id = pat.subject_id and (coh.chart_time > (adm.admittime - interval '2' day)) and (coh.chart_time < (adm.dischtime + interval '2' day))
-inner join mimiciv.icustays icu
-on icu.subject_id = pat.subject_id and (coh.chart_time > (icu.intime - interval '2' day)) and (coh.chart_time < (icu.outtime + interval '2' day))
+from mimiciv.icustays ie
+-- Join to the outputevents table to get urine output
 left join mimiciv.outputevents oe
 -- join on all patient identifiers
-on icu.subject_id = oe.subject_id and icu.hadm_id = oe.hadm_id
+on ie.subject_id = oe.subject_id and ie.hadm_id = oe.hadm_id and ie.stay_id = oe.stay_id
 -- and ensure the data occurs during the first day
-and oe.charttime between icu.intime and (icu.intime + interval '1' day) -- first ICU day
+and oe.charttime between ie.intime and (ie.intime + interval '1' day) -- first ICU day
 where itemid in
 (
 -- these are the most frequently occurring urine output observations in CareVue
@@ -57,6 +53,6 @@ where itemid in
 227488, -- GU Irrigant Volume In
 227489  -- GU Irrigant/Urine Volume Out
 )
-group by coh.micro_specimen_id, per.person_id
--- order by coh.micro_specimen_id, per.person_id
+group by ie.subject_id, ie.hadm_id, ie.stay_id
+order by ie.subject_id, ie.hadm_id, ie.stay_id
 ;
