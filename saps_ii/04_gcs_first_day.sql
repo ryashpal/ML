@@ -128,7 +128,7 @@ with base as
                ) as IsMinGCS
   from gcs
 )
-select coh.micro_specimen_id, per.person_id
+select ie.SUBJECT_ID, ie.HADM_ID, ie.STAY_ID
 -- The minimum GCS is determined by the above row partition, we only join if IsMinGCS=1
 , GCS as MinGCS
 , coalesce(GCSMotor,GCSMotorPrev) as GCSMotor
@@ -137,17 +137,8 @@ select coh.micro_specimen_id, per.person_id
 , EndoTrachFlag as EndoTrachFlag
 
 -- subselect down to the cohort of eligible patients
-from
-sepsis_micro.cohort coh
-inner join omop_cdm.person per
-on per.person_id = coh.person_id
-inner join mimiciv.patients pat
-on pat.subject_id = per.person_source_value::int
--- inner join mimiciv.admissions adm
--- on adm.subject_id = pat.subject_id and (coh.chart_time > (adm.admittime - interval '2' day)) and (coh.chart_time < (adm.dischtime + interval '2' day))
-inner join mimiciv.icustays icu
-on icu.subject_id = pat.subject_id and (coh.chart_time > (icu.intime - interval '2' day)) and (coh.chart_time < (icu.outtime + interval '2' day))
+from mimiciv.icustays ie
 left join gcs_final gs
-  on icu.STAY_ID = gs.STAY_ID and gs.IsMinGCS = 1
-ORDER BY icu.STAY_ID
+  on ie.STAY_ID = gs.STAY_ID and gs.IsMinGCS = 1
+ORDER BY ie.STAY_ID
 ;
